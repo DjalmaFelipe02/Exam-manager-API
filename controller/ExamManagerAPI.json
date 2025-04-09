@@ -1,0 +1,38 @@
+{
+    "client": "thunder-client",
+    "collectionName": "Exam Manager API",
+    "requests": [
+      {
+        "name": "Login (Admin)",
+        "url": "http://localhost:8000/api/auth/login",
+        "method": "POST",
+        "bodyType": "json",
+        "body": {
+          "username": "admin",
+          "password": "senha123"
+        }
+      },
+      {
+        "name": "Criar Prova",
+        "url": "http://localhost:8000/api/exams",
+        "method": "POST",
+        "headers": {
+          "Authorization": "Bearer {{token}}",
+          "Content-Type": "application/json"
+        },
+        "bodyType": "json",
+        "body": {
+          "title": "Prova de Matemática",
+          "description": "Prova sobre álgebra linear"
+        }
+      },
+      {
+        "name": "Listar Provas",
+        "url": "http://localhost:8000/api/exams",
+        "method": "GET",
+        "headers": {
+          "Authorization": "Bearer {{token}}"
+        }
+      }
+    ]
+  }
