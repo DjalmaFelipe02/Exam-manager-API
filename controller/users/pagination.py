@@ -1,6 +1,8 @@
 from ninja.pagination import PaginationBase
-from ninja import Schema
+from ninja.schema import Schema
+from typing import Any
 
+# pagination.py
 class CustomPagination(PaginationBase):
     class Input(Schema):
         page: int = 1
@@ -16,9 +18,16 @@ class CustomPagination(PaginationBase):
         page = pagination.page
         per_page = pagination.per_page
         offset = (page - 1) * per_page
+
+         # Converta o queryset para lista se necessário
+        if not isinstance(queryset, list):
+            queryset = list(queryset)
+        
+        items = queryset[offset:offset + per_page]
+
         return {
-            "count": queryset.count(),
+            "count": len(queryset) if isinstance(queryset, list) else queryset.count(),
             "page": page,
             "per_page": per_page,
-            "items": queryset[offset : offset + per_page]
+            "items": items,
         }

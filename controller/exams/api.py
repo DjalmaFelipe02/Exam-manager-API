@@ -24,7 +24,7 @@ from .schemas import (
 )
 from users.api import AuthBearer
 
-router = Router(tags=["Exams"], auth=AuthBearer())
+router = Router(tags=["Exams"])
 
 # ------------------------------ Exams Endpoints ------------------------------
 @router.post('/exams', response={

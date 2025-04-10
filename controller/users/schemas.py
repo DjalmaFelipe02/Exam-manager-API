@@ -27,6 +27,7 @@ class UserCreate(Schema):
         if not v.isalnum():
             raise ValueError('Username deve conter apenas letras e números')
         return v
+    
 class UserOut(Schema):
     id: int
     username: str
@@ -45,13 +46,18 @@ class UserOut(Schema):
 class UserUpdate(Schema):
     username: Optional[str] = None
     password: Optional[str] = None
-    role: Optional[str] = None
+    role: Optional[UserRole] = None
     is_active: Optional[bool] = None
 
     @validator('password')
     def validate_password(cls, v):
         if v and len(v) < 8:
             raise ValueError('Senha deve ter pelo menos 8 caracteres')
+        return v
+    @validator('role')
+    def validate_role(cls, v):
+        if v and v not in [role.value for role in UserRole]:
+            raise ValueError('Role inválida')
         return v
 
 class LoginCredentials(Schema):
@@ -61,3 +67,6 @@ class LoginCredentials(Schema):
 class TokenOut(Schema):
     token: str
     token_type: str = "bearer"
+
+class ErrorResponse(Schema):
+    detail: str
