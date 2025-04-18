@@ -2,9 +2,11 @@ from celery import shared_task
 from django.db import transaction
 from django.db.models import F, Subquery, OuterRef
 from .models import Participant, Answer
+from django.db import models
 import logging
 
 logger = logging.getLogger(__name__)
+__all__ = ['add', 'grade_answers', 'update_ranking']
 
 @shared_task
 def grade_answers(answer_id):
@@ -47,3 +49,7 @@ def update_ranking(exam_id):
             
     except Exception as e:
         logger.error(f"Erro ao atualizar ranking da prova {exam_id}: {str(e)}")
+
+@shared_task
+def add(x, y):
+    return x + y

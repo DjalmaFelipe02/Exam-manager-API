@@ -6,6 +6,12 @@ from django.shortcuts import get_object_or_404
 from django.db import transaction
 from datetime import datetime
 from django.db.models import Q
+import logging
+from .documents import ExamDocument
+
+logger = logging.getLogger(__name__)
+
+from celery import shared_task                              
 
 from .models import Exam, Question, Choice, Participant, Answer
 from .schemas import (
@@ -59,6 +65,22 @@ def list_exams(request, search: Optional[str] = None, is_active: Optional[bool] 
     
     return queryset.order_by('-created_at')
 
+@router.get('/exams', response=List[ExamOut])
+@paginate
+def list_exams(request, search: Optional[str] = None, is_active: Optional[bool] = None, order_by: Optional[str] = '-created_at'):
+    """Lista todas as provas com filtros e ordenação"""
+    queryset = Exam.objects.all()
+    
+    if search:
+        queryset = queryset.filter(
+            Q(title__icontains=search) |
+            Q(description__icontains=search)
+        )
+    if is_active is not None:
+        queryset = queryset.filter(is_active=is_active)
+    
+    return queryset.order_by(order_by)
+
 @router.get('/exams/{exam_id}', response=ExamOut, auth=AuthBearer())
 def get_exam(request, exam_id: int):
     """Detalhes de uma prova específica"""
@@ -86,6 +108,23 @@ def delete_exam(request, exam_id: int):
     exam.delete()
     return 200, {"detail": "Prova excluída com sucesso"}
 
+@router.get("/exams/{exam_id}")
+def get_exam_by_id(exam_id: int):
+    exam = db.get_exam_by_id(exam_id)
+    if not exam:
+        raise HTTPException(status_code=404, detail="Exam not found")
+    return exam
+
+
+
+@router.get('/exams/search', response=List[ExamOut], auth=None)
+def search_exams(request, query: str):
+    """Busca provas no Elasticsearch"""
+    search = ExamDocument.search().query("multi_match", query=query, fields=["title", "description"])
+    results = search.execute()
+    return [hit.to_dict() for hit in results]
+
+
 # ---------------------------- Questions Endpoints ----------------------------
 @router.post('/questions', response=QuestionOut, auth=AuthBearer())
 def create_question(request, payload: QuestionIn):
@@ -112,7 +151,7 @@ def list_questions(request, exam_id: Optional[int] = None):
     
     return queryset.order_by('id')
 
-@router.put('/questions/{question_id}', response=QuestionOut, auth=AuthBearer())
+@router.put('/questions/{question_id}', response={200: QuestionOut, 403: ErrorResponse}, auth=AuthBearer())
 def update_question(request, question_id: int, payload: QuestionIn):
     """Atualiza uma questão (Admin only)"""
     if request.auth.role != 'ADMIN':
@@ -135,19 +174,17 @@ def delete_question(request, question_id: int):
     return 200, {"detail": "Questão excluída com sucesso"}
 
 # ----------------------------- Choices Endpoints -----------------------------
-@router.post('/choices', response=ChoiceOut, auth=AuthBearer())
+@router.post('/choices', response={201: ChoiceOut, 422: ErrorResponse}, auth=AuthBearer())
 def create_choice(request, payload: ChoiceIn):
-    """Cria nova alternativa (Admin only)"""
-    if request.auth.role != 'ADMIN':
-        return 403, {"detail": "Permissão negada"}
-    
+    logger.info(f"Payload recebido: {payload}")
+    """Cria uma nova alternativa"""
     question = get_object_or_404(Question, id=payload.question_id)
     choice = Choice.objects.create(
         question=question,
         text=payload.text,
         is_correct=payload.is_correct
     )
-    return choice
+    return 201, choice
 
 @router.get('/choices', response=List[ChoiceOut], auth=AuthBearer())
 @paginate
@@ -160,7 +197,7 @@ def list_choices(request, question_id: Optional[int] = None):
     
     return queryset.order_by('id')
 
-@router.put('/choices/{choice_id}', response=ChoiceOut, auth=AuthBearer())
+@router.put('/choices/{choice_id}', response={200: ChoiceOut, 403: ErrorResponse}, auth=AuthBearer())
 def update_choice(request, choice_id: int, payload: ChoiceIn):
     """Atualiza uma alternativa (Admin only)"""
     if request.auth.role != 'ADMIN':
@@ -183,10 +220,19 @@ def delete_choice(request, choice_id: int):
     return 200, {"detail": "Alternativa excluída com sucesso"}
 
 # -------------------------- Participants Endpoints ---------------------------
-@router.post('/participants',  response={200: ParticipantOut, 400: ErrorResponse}, auth=AuthBearer())
+@router.post('/participants', response={201: ParticipantOut, 400: ErrorResponse}, auth=AuthBearer())
 def register_participant(request, payload: ParticipantIn):
-    """Inscreve usuário em uma prova"""
     exam = get_object_or_404(Exam, id=payload.exam_id)
+# Verifica tentativas existentes
+    last_attempt = Participant.objects.filter(
+        user=request.auth,
+        exam=exam
+    ).order_by('-current_attempt').first()
+    
+    current_attempt = 1 if not last_attempt else last_attempt.current_attempt + 1
+
+    if current_attempt >= exam.max_attempts:
+        return 400, {"detail": f"Número máximo de tentativas ({exam.max_attempts}) atingido"}
     
     # Verifica se já está inscrito
     if Participant.objects.filter(user=request.auth, exam=exam).exists():
@@ -194,9 +240,10 @@ def register_participant(request, payload: ParticipantIn):
     
     participant = Participant.objects.create(
         user=request.auth,
-        exam=exam
+        exam=exam,
+        current_attempt=current_attempt
     )
-    return participant
+    return 201, participant
 
 @router.get('/participants', response=List[ParticipantOut], auth=AuthBearer())
 @paginate
@@ -267,11 +314,11 @@ def list_answers(request, participant_id: Optional[int] = None):
     return queryset.order_by('-answered_at')
 
 # ---------------------------- Public Endpoints -------------------------------
-@router.get('/exams/active', response=List[ExamOut], auth=None)  # <-- ESSENCIAL
+@router.get('/exams/active', response=List[ExamOut], auth=None)
 def list_active_exams(request):
     """Lista provas ativas (público)"""
-    return Exam.objects.filter(is_active=True).order_by('-created_at')
-
+    exams = Exam.objects.filter(is_active=True).order_by('-created_at')
+    return list(exams)
 @router.get('/exams/{exam_id}/ranking', response=List[ParticipantOut])
 def get_ranking(request, exam_id: int):
     """Ranking de participantes de uma prova"""

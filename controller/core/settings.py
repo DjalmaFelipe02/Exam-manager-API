@@ -12,6 +12,14 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SECRET_KEY = os.getenv('SECRET_KEY', 'fallback-secret-key')
+print(f"SECRET_KEY carregado: {SECRET_KEY}")
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,7 +29,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-!7g$y79a2kl#wak9g+#l5z5v)pezs@gsbd0^mof4p)20negh3m'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -29,7 +36,10 @@ DEBUG = True
 ALLOWED_HOSTS = []
 
 # Configurações do Celery (para tarefas assíncronas)
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_BROKER_URL = 'redis://redis:6379/0'
+CELERY_RESULT_BACKEND = 'redis://redis:6379/0'  # Adicione esta linha
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
 
 
 # Application definition
@@ -88,12 +98,18 @@ AUTH_USER_MODEL = 'users.User'  # User customizado
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'examdb',
-        'USER': 'postgres',
-        'PASSWORD': 'postgres',
-        'HOST': 'localhost',
+        'NAME': os.getenv('POSTGRES_DB', 'examdb'),
+        'USER': os.getenv('POSTGRES_USER', 'postgres'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'postgres'),
+        'HOST': 'db',
         'PORT': '5432',
     }
+}
+
+ELASTICSEARCH_DSL = {
+    'default': {
+        'hosts': 'localhost:9200'  # URL do Elasticsearch
+    },
 }
 
 
